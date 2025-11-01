@@ -211,6 +211,11 @@ setup_sf_server() {
     perl -i -pe 's/("CONTENT_LENGTH": )content_length,/$1str(content_length),/' "$SF_SERVER_DIR/fileserver/subrequest.py" \
         || error_exit "Failed to modify subrequest.py."
 
+    # Update the code of session-file-server ($SF_SERVER_DIR/fileserver/routes.py)
+    # Change to_verify = ts_str.encode() + request.method.encode() + request.path.encode() to to_verify = str(ts_str).encode() + request.method.encode() + request.path.encode()
+    perl -i -pe 's/(to_verify = )ts_str.encode\(\) \+ request.method.encode\(\) \+ request.path.encode\(\)/$1str(ts_str).encode() \+ request.method.encode() \+ request.path.encode()/' "$SF_SERVER_DIR/fileserver/routes.py" \
+        || error_exit "Failed to modify routes.py."
+
     log "INFO" "Session-fileserver setup complete."
 }
 
