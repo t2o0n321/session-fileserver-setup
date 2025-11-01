@@ -15,7 +15,8 @@ declare -r USER_NAME="${SUDO_USER:-$USER}"
 # Log file path
 declare -r LOG_FILE="/var/log/session_fileserver_setup.log"
 
-# Session-file-server directory
+# Session-file-server
+declare -r GIT_REPO_URL="https://github.com/session-foundation/session-file-server.git"
 declare -r SF_SERVER_DIR="${SCRIPT_DIR}/session-file-server"
 
 # uWGSI ini file path
@@ -158,7 +159,7 @@ setup_sf_database() {
 
     log "INFO" "Cloning session-fileserver's repository..."
     if [ ! -d "session-file-server" ]; then
-        git clone https://github.com/oxen-io/session-file-server.git || error_exit "Failed to clone session-file-server repository."
+        git clone "$GIT_REPO_URL" || error_exit "Failed to clone session-file-server repository."
     else
         log "INFO" "session-file-server directory already exists. Skipping clone."
     fi
@@ -171,6 +172,12 @@ setup_sf_database() {
 
         log "INFO" "Granting all privileges on database 'sessionfiles' to user '$db_user'..."
         sudo -u postgres psql -d sessionfiles -c "GRANT ALL PRIVILEGES ON DATABASE sessionfiles TO $db_user;" || error_exit "Failed to grant all database privileges."
+
+        log "INFO" "Granting all privileges on all tables in schema public to user '$db_user'..."
+        sudo -u postgres psql -d sessionfiles -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO $db_user;" || error_exit "Failed to grant all table privileges."
+
+        log "INFO" "Granting all privileges on all sequences in schema public to user '$db_user'..."
+        sudo -u postgres psql -d sessionfiles -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $db_user;" || error_exit "Failed to grant all sequence privileges."
     fi
 
     log "INFO" "Database setup complete."

@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/src/common.sh"
 
 main() {
     # Display arts title
-    local arts_title_file="$(dirname "${BASH_SOURCE[0]}")/arts.txt"
+    local arts_title_file="$(dirname "${BASH_SOURCE[0]}")/art.txt"
     if [ -f "$arts_title_file" ]; then
         cat "$arts_title_file"
         echo ""
