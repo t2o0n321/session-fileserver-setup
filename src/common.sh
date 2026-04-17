@@ -158,8 +158,8 @@ setup_sf_database() {
     fi
 
     log "INFO" "Cloning session-fileserver's repository..."
-    if [ ! -d "session-file-server" ]; then
-        git clone "$GIT_REPO_URL" || error_exit "Failed to clone session-file-server repository."
+    if [ ! -d "$SF_SERVER_DIR" ]; then
+        git clone "$GIT_REPO_URL" "$SF_SERVER_DIR" || error_exit "Failed to clone session-file-server repository."
     else
         log "INFO" "session-file-server directory already exists. Skipping clone."
     fi
@@ -168,7 +168,7 @@ setup_sf_database() {
         log "INFO" "Schema already loaded."
     else
         log "INFO" "Loading database schema..."
-        (cd session-file-server && sudo -u postgres psql -f schema.pgsql sessionfiles) || error_exit "Failed to load database schema."
+        sudo -u postgres psql -f "$SF_SERVER_DIR/schema.pgsql" sessionfiles || error_exit "Failed to load database schema."
 
         log "INFO" "Granting all privileges on database 'sessionfiles' to user '$db_user'..."
         sudo -u postgres psql -d sessionfiles -c "GRANT ALL PRIVILEGES ON DATABASE sessionfiles TO $db_user;" || error_exit "Failed to grant all database privileges."
@@ -178,6 +178,9 @@ setup_sf_database() {
 
         log "INFO" "Granting all privileges on all sequences in schema public to user '$db_user'..."
         sudo -u postgres psql -d sessionfiles -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $db_user;" || error_exit "Failed to grant all sequence privileges."
+
+        log "INFO" "Inserting default storage pool..."
+        sudo -u postgres psql -d sessionfiles -c "INSERT INTO storage_pools (name, active) VALUES ('default', true);" || error_exit "Failed to insert default storage pool."
     fi
 
     log "INFO" "Database setup complete."
@@ -235,6 +238,8 @@ plugins = python3
 processes = 4
 manage-script-name = true
 mount = /=fileserver.web:app
+
+enable-threads = true
 
 # Logging
 logto = $SF_SERVER_DIR/sfs.log
