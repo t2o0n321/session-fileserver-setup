@@ -1,0 +1,18 @@
+# Terraform working files — never commit state (may contain the API key / IPs) or
+# the downloaded providers.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Terraform workspace state (one dir per instance)
+terraform.tfstate.d/

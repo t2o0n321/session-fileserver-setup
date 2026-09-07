@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and adjust. Prefer exporting the API key instead:
+#   export VULTR_API_KEY=xxxxxxxx
+# vultr_api_key       = "xxxxxxxx"
+
+region              = "icn"          # Seoul, KR
+plan                = "vc2-1c-1gb"   # 1 vCPU / 1 GB / 25 GB SSD
+os_name             = "Ubuntu 24.04 LTS x64"
+label               = "session-fileserver"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+# enable_ipv6       = false

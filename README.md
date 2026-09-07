@@ -1,209 +1,190 @@
-# Session File Server Deployment
+# Session File Server — automated deployment
 
-This repo provides an automated setup script for deploying the [Session File Server](https://github.com/session-foundation/session-file-server) on Ubuntu.
+Deploys the [Session File Server](https://github.com/session-foundation/session-file-server)
+onto an Ubuntu server and hands back the two values this fork's Android client
+needs to use it. Built so a self-hosted operator can go from a bare VPS to a
+working, TLS-terminated file server in one command — and re-run it safely.
 
-## Prerequisites
-
-- Fresh Ubuntu server (20.04 LTS or newer)
-- A non-root user with `sudo` privileges
-- A domain name pointed at your server's IP address
-
----
-
-## Automated Setup
-
-Run the setup script with your domain:
-
-```bash
-sudo ./setup.sh --domain your_domain.com
-```
-
-Or with the short flag:
-
-```bash
-sudo ./setup.sh -d your_domain.com
-```
-
-The script will:
-1. Install all required system packages (Python, PostgreSQL, Nginx, uWSGI, Oxen packages)
-2. Create the PostgreSQL database and user
-3. Load the database schema and seed a default storage pool
-4. Clone the `session-file-server` repository
-5. Create and configure a Python virtual environment
-6. Apply required code patches
-7. Configure uWSGI (vassal under uWSGI Emperor)
-8. Configure Nginx as a reverse proxy
-9. Restart all services
+Self-hosting keeps uploaded attachments on infrastructure you control instead of
+the shared public file server (see `notes/6_自建SessionFileServer.md`).
 
 ---
 
-## Manual Setup
+## Two ways to deploy
 
-If you prefer to set things up manually, follow these steps.
+- **On an Ubuntu server you already have** — run `setup.sh` directly (see
+  [Quick start](#quick-start) below).
+- **From scratch on Vultr** — the [`terraform/`](terraform/README.md) workflow
+  provisions a `vc2-1c-1gb` instance, you point DNS at the IP it prints, then it
+  runs `setup.sh` on the box and returns the Ed25519 public key. Two stages, with
+  a manual DNS step between them. Drive it in one command from your own machine
+  (needs Terraform installed locally):
 
-### 1. Install Dependencies
+  ```bash
+  ./setup.sh --tf-vultr --vultr-api-key=xxxxxxxx
+  #   choose 1) create instance  → prints external IP
+  #   → add a DNS A record for that IP, wait for it to resolve
+  ./setup.sh --tf-vultr --vultr-api-key=xxxxxxxx --domain files.example.org
+  #   choose 2) install  → prints the Ed25519 public key
+  ```
 
-```bash
-sudo apt update && sudo apt upgrade -y
+  `--tf-vultr` runs the workflow locally instead of installing on the current
+  host (the two flags must be given together). The menu also offers **3)
+  live-monitor a server's log** — pick an instance and it streams
+  `journalctl -f` over SSH with the server's ed25519 pubkey pinned at the top.
+  If an instance with the same name already exists, Feature 1 asks before
+  creating another and, on approval, appends the next free number
+  (`session-fileserver-2`, `-3`, …), each in its own Terraform workspace. You can
+  also run the Terraform modules directly — full details in
+  [terraform/README.md](terraform/README.md).
 
-sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
-echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
-sudo apt update && sudo apt upgrade -y
+---
 
-sudo apt install -y python3 python3-pip python3.12-venv \
-    postgresql postgresql-client nginx uwsgi-emperor uwsgi-plugin-python3 git \
-    python3-{systemd,flask,uwsgidecorators,coloredlogs,session-util}
-```
+## Requirements
 
-### 2. Database Setup
+- **Ubuntu Server 24.04 (noble), 25.10 (questing) or 26.04 LTS (resolute)**, `amd64` or `arm64`.
+  Other releases are refused unless you pass `--allow-unsupported-os`.
+- Run as **root** (via `sudo`).
+- A **domain name** with an `A`/`AAAA` record pointing at the server (required
+  for the default Let's Encrypt TLS mode; skippable with `--skip-dns-check`).
+- Outbound HTTPS (to `deb.oxen.io`, GitHub and PyPI) during installation.
 
-```bash
-sudo su - postgres
-createuser youruser          # replace with your Ubuntu username
-createdb -O youruser sessionfiles
-exit
-```
+`python3-session-util` comes from the Oxen apt repository; on 26.04 it is built
+for Python 3.14, which the installer's system-site-packages virtualenv picks up
+automatically.
 
-Edit `/etc/postgresql/XX/main/pg_hba.conf` (where `XX` is your PostgreSQL version). Find the line for `local` connections and change `peer` to `trust`:
+---
 
-```
-local   all   all   trust
-```
-
-Then restart PostgreSQL:
-
-```bash
-sudo systemctl restart postgresql
-```
-
-Clone the repository and load the schema:
-
-```bash
-git clone https://github.com/session-foundation/session-file-server.git
-cd session-file-server
-psql -f schema.pgsql sessionfiles
-```
-
-Insert a default storage pool (required — the schema does not seed this):
+## Quick start
 
 ```bash
-psql -d sessionfiles -c "INSERT INTO storage_pools (name, active) VALUES ('default', true);"
+sudo ./setup.sh --domain files.example.org --email you@example.org
 ```
 
-### 3. Application Setup
+This will, as ten idempotent steps:
+
+1. **Preflight** — verify OS/arch/systemd/disk, that ports 80/443 are free, and
+   that the domain resolves to this host.
+2. **Packages** — register `deb.oxen.io` with a *scoped* signing key
+   (`/etc/apt/keyrings`, `Signed-By`) and install nginx, PostgreSQL, uWSGI,
+   Python and `python3-session-util`.
+3. **Account & layout** — create the unprivileged `sfs` system account and the
+   `/opt` (code), `/etc` (config) and `/var/lib` (state) directories.
+4. **Source** — clone the file server at a **pinned commit** (override `--ref`).
+5. **PostgreSQL** — create the `sfs` role and `sessionfiles` database (peer auth,
+   no `pg_hba.conf` edit), load the schema **as the owner**, and seed the
+   default storage pool.
+6. **Application** — build the virtualenv, generate the server's Ed25519
+   identity key (`0600`), and write `config.py`.
+7. **Service** — install and start a hardened `systemd` unit running uWSGI.
+8. **nginx + TLS** — reverse-proxy the socket and obtain a certificate.
+9. **Firewall** — optional (`--firewall`); always allows SSH before enabling UFW.
+10. **Verify** — probe the app over its socket and do an upload/download
+    round-trip, then print the client configuration values.
+
+### Point the client at it
+
+The final summary prints exactly what to put in `session-android/.env.local`
+(see `notes/98_環境變數.md`):
+
+```dotenv
+DEFAULT_FILE_SERVER_URL="https://files.example.org"
+DEFAULT_FILE_SERVER_ED25519_PUBKEY_HEX="<printed by the installer>"
+```
+
+The client talks to the server exclusively over onion requests
+(`POST /oxen/v4/lsrpc`), encrypting to the X25519 key derived from that Ed25519
+public key, so both values must match the deployed server.
+
+---
+
+## Options
+
+| Option | Meaning |
+|---|---|
+| `-d, --domain <fqdn>` | **Required.** Domain the server answers on. |
+| `--tls <mode>` | `certbot` (default), `existing`, `self-signed`, or `none`. |
+| `--email <addr>` | Contact address for Let's Encrypt. |
+| `--cert <path>` / `--key <path>` | Certificate and key for `--tls existing`. |
+| `--ref <git-ref>` | Upstream commit/tag/branch to deploy (default: pinned). |
+| `--max-file-size <bytes>` | Upload limit (default `10000000`, matching the client). |
+| `--processes <n>` | uWSGI worker processes (default `4`). |
+| `--firewall` | Configure UFW (allows the detected SSH port first). |
+| `--upgrade-system` | Run `apt upgrade` during install (off by default). |
+| `--dry-run` | Print every change without making any. |
+| `-y, --yes` | Assume "yes" for prompts (unattended). |
+| `--skip-dns-check` | Do not require the domain to resolve here. |
+| `--skip-selftest` | Skip the upload/download round-trip. |
+| `--allow-unsupported-os` | Proceed on an untested OS/release. |
+| `--uninstall` [`--purge`] | Remove the deployment (`--purge` also deletes data). |
+| `-h, --help` / `-V, --version` | Help / version. |
+
+### TLS modes
+
+- **certbot** *(default)* — Let's Encrypt via the nginx plugin. Needs public DNS
+  and port 80 reachable. Choosing this mode agrees to the Let's Encrypt ToS.
+- **existing** — you supply `--cert` and `--key` (e.g. a wildcard cert).
+- **self-signed** — generated locally; for testing only. An exit service node
+  may reject an untrusted certificate.
+- **none** — plain HTTP. Only sensible behind a separate TLS-terminating proxy.
+
+---
+
+## Operating it
 
 ```bash
-python3 -m venv --system-site-packages venv
-source ./venv/bin/activate
-pip3 install coloredlogs psycopg psycopg_pool pynacl requests
+systemctl status session-file-server      # health
+journalctl -u session-file-server -f      # logs
+systemctl restart session-file-server     # restart
+
+# Update to a newer upstream revision:
+sudo ./setup.sh --domain files.example.org --ref <commit> --skip-dns-check
 ```
 
-Copy and edit the config:
+- **Code**: `/opt/session-file-server` (root-owned; the service cannot rewrite it).
+- **Config**: `/etc/session-file-server/` and `/opt/session-file-server/fileserver/config.py`.
+- **State** (uploads + identity key): `/var/lib/session-file-server/` (`sfs`, `0700`).
+- **Install log**: `/var/log/session-fileserver-setup.log`.
+
+Re-running `setup.sh` is safe: existing accounts, databases, keys and configs are
+detected and preserved, and unchanged files never trigger a service restart.
+
+### Uninstall
 
 ```bash
-cp fileserver/config.py.sample fileserver/config.py
-```
-
-Set your database user in `fileserver/config.py`:
-
-```python
-pgsql_connect_opts = {
-    "dbname": "sessionfiles",
-    "user": "youruser",
-}
-```
-
-Apply a required code fix in `fileserver/subrequest.py`. Find:
-
-```python
-"CONTENT_LENGTH": content_length,
-```
-
-Change it to:
-
-```python
-"CONTENT_LENGTH": str(content_length),
-```
-
-### 4. uWSGI Configuration
-
-Create `/etc/uwsgi-emperor/vassals/sfs.ini`:
-
-```ini
-[uwsgi]
-chdir = /home/youruser/session-file-server
-
-virtualenv = /home/youruser/session-file-server/venv
-socket = /home/youruser/session-file-server/sfs.wsgi
-chmod-socket = 660
-plugins = python3
-processes = 4
-manage-script-name = true
-mount = /=fileserver.web:app
-
-enable-threads = true
-
-logto = /home/youruser/session-file-server/sfs.log
-```
-
-```bash
-sudo chown youruser:www-data /etc/uwsgi-emperor/vassals/sfs.ini
-```
-
-### 5. Nginx Configuration
-
-Create `/etc/nginx/sites-available/session-file-server`:
-
-```nginx
-server {
-    listen 80;
-    server_name your_domain.com;
-
-    client_max_body_size 10M;
-
-    location / {
-        include uwsgi_params;
-        uwsgi_pass unix:/home/youruser/session-file-server/sfs.wsgi;
-    }
-}
-```
-
-Enable the site and restart services:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/session-file-server /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-
-sudo chmod o+x /home/youruser
-sudo chown -R www-data:www-data /home/youruser/session-file-server/
-sudo systemctl restart uwsgi-emperor
+sudo ./setup.sh --uninstall           # remove service/config/code; keep data
+sudo ./setup.sh --uninstall --purge   # also drop the database, files and key
 ```
 
 ---
 
-## Verification
+## Project layout
 
-Test the server is running:
-
-```bash
-curl -s 'http://your_domain.com/session_version?platform=desktop' | jq
+```
+setup.sh                 Entry point: argument parsing and step orchestration.
+src/lib/config.sh        All constants (paths, package lists, defaults).
+src/lib/log.sh           Logging and fatal-error handling.
+src/lib/ui.sh            Banner, step headers, summary.
+src/lib/util.sh          run()/write_file() mutation wrappers + probes.
+src/preflight.sh         Pre-change environment checks.
+src/steps/NN_*.sh        One file per install step, in order.
+src/uninstall.sh         Teardown.
+test/                    Offline lint + Docker end-to-end test harness.
+terraform/               Optional: provision a Vultr VPS and run setup.sh on it
+                         (two-stage workflow — see terraform/README.md).
 ```
 
-A successful response returns JSON with the latest Session desktop version.
+Every system change goes through `run()` or `write_file()`, which is what makes
+`--dry-run` a faithful preview and re-runs idempotent.
 
 ---
 
-## Operations
+## Notes
 
-**Read logs:**
-
-```bash
-sudo tail -f /home/youruser/session-file-server/sfs.log
-```
-
-**Restart the application** after code changes:
-
-```bash
-touch /etc/uwsgi-emperor/vassals/sfs.ini
-```
+- The server enforces its own `MAX_FILE_SIZE`; the installer defaults it to
+  10 MB to match the client, and nginx allows some headroom above it.
+- `/session_version` returns `502` for the first minutes after start while the
+  app fetches release metadata from GitHub — this is upstream behaviour and
+  does not affect file upload/download.
+- `POST /file` is unauthenticated by design (as on the official file server);
+  nginx applies a light rate limit as defence-in-depth.

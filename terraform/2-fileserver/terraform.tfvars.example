@@ -1,0 +1,11 @@
+# Usually you do NOT edit this — run ./select-instance.sh, which picks the
+# instance interactively and passes these as -var flags. Provided for direct,
+# non-interactive use:
+#
+#   terraform apply -var instance_ip=203.0.113.10 -var domain=files.example.org
+
+# instance_ip          = "203.0.113.10"
+# domain               = "files.example.org"
+# email                = "you@example.org"
+# ssh_private_key_path = "~/.ssh/id_ed25519"
+# extra_setup_args     = "--firewall"
