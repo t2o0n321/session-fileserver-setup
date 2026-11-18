@@ -188,3 +188,6 @@ Every system change goes through `run()` or `write_file()`, which is what makes
   does not affect file upload/download.
 - `POST /file` is unauthenticated by design (as on the official file server);
   nginx applies a light rate limit as defence-in-depth.
+- Every HTTPS response carries `Strict-Transport-Security: max-age=31536000`
+  (certbot mode adds it with `--hsts`), and no response reveals the nginx
+  version, including the HTTP-to-HTTPS redirect.

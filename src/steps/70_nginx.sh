@@ -34,6 +34,9 @@ _make_self_signed() {
 }
 
 # The proxy_pass block, shared by the HTTP-only and HTTPS server blocks.
+# server_tokens is set in every server block rather than once in http{}:
+# Ubuntu 26.04's nginx.conf already sets `server_tokens build;` there, and a
+# second http-level setting fails `nginx -t`.
 _location_block() {
     cat <<EOF
     client_max_body_size ${NGINX_MAX_BODY_SIZE};
@@ -74,6 +77,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${DOMAIN};
+    server_tokens off;
 
     location /.well-known/acme-challenge/ { root /var/www/html; }
     location / { return 301 https://\$host\$request_uri; }
@@ -105,6 +109,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
+    server_tokens off;
     return 444;
 }
 EOF
@@ -149,7 +154,11 @@ _obtain_certbot_cert() {
         printf '    %s[dry-run]%s certbot --nginx -d %s\n' "${C_DIM}" "${C_RESET}" "${DOMAIN}"
         return 0
     fi
-    local -a args=(--nginx -d "${DOMAIN}" --non-interactive --agree-tos --redirect)
+    # --hsts makes certbot add the same Strict-Transport-Security header to the
+    # 443 block that _write_https_site writes. certbot applies it before
+    # --redirect, so the port-80 block it splits off is a full copy of the site
+    # and keeps _location_block's server_tokens off.
+    local -a args=(--nginx -d "${DOMAIN}" --non-interactive --agree-tos --redirect --hsts)
     if [[ -n "${CERTBOT_EMAIL}" ]]; then
         args+=(-m "${CERTBOT_EMAIL}")
     else
