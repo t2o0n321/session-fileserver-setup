@@ -28,6 +28,14 @@ _remove_nginx() {
     ok "Removed nginx site (self-signed cert, if any, left in place)"
 }
 
+_remove_ssh_dropin() {
+    run rm -f "${SSHD_DROPIN}"
+    if cmd_exists sshd && [[ "${DRY_RUN}" != "1" ]]; then
+        sshd -t >/dev/null 2>&1 && systemctl try-reload-or-restart ssh >/dev/null 2>&1 || true
+    fi
+    ok "Removed the sshd MAC drop-in (sshd is back to its stock MACs)"
+}
+
 _remove_config_and_code() {
     run rm -f "${UWSGI_INI_FILE}"
     run rm -rf "${CONF_DIR}"
@@ -66,12 +74,13 @@ _purge_data() {
 }
 
 run_uninstall() {
-    set_step_total 6
+    set_step_total 7
     [[ "${DRY_RUN}" == "1" ]] && notice "DRY RUN: no changes will be made."
     notice "Uninstalling the Session file server${PURGE:+ (with --purge)}."
 
     step "Stop the service";          _stop_and_disable_service
     step "Remove nginx site";         _remove_nginx
+    step "Remove sshd MAC drop-in";   _remove_ssh_dropin
     step "Remove config and code";    _remove_config_and_code
     step "Remove the apt source";     _remove_apt_source
     step "Handle data";               _purge_data

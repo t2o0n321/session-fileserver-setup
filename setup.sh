@@ -61,6 +61,7 @@ DRY_RUN=0
 ASSUME_YES=0
 UPGRADE_SYSTEM=0
 CONFIGURE_FIREWALL=0
+SKIP_SSH_HARDENING=0
 SKIP_DNS_CHECK=0
 SKIP_SELFTEST=0
 ALLOW_UNSUPPORTED_OS=0
@@ -94,6 +95,7 @@ DEPLOYMENT
         --max-file-size <n>  Max upload in bytes (default: ${DEFAULT_MAX_FILE_SIZE}).
         --processes <n>      uWSGI worker processes (default: ${DEFAULT_UWSGI_PROCESSES}).
         --firewall           Configure and offer to enable UFW (allows SSH first).
+        --skip-ssh-hardening Keep sshd's stock MACs (incl. hmac-sha1, umac-64).
         --upgrade-system     Run 'apt upgrade' during install (off by default).
 
 BEHAVIOUR
@@ -150,6 +152,7 @@ parse_args() {
             --max-file-size)    require_value "$1" "${2:-}"; MAX_FILE_SIZE="$2"; shift 2 ;;
             --processes)        require_value "$1" "${2:-}"; UWSGI_PROCESSES="$2"; shift 2 ;;
             --firewall)         CONFIGURE_FIREWALL=1; shift ;;
+            --skip-ssh-hardening) SKIP_SSH_HARDENING=1; shift ;;
             --upgrade-system)   UPGRADE_SYSTEM=1; shift ;;
             --dry-run)          DRY_RUN=1; shift ;;
             -y|--yes)           ASSUME_YES=1; shift ;;
@@ -205,9 +208,9 @@ main() {
 
     validate_domain
     [[ "${DRY_RUN}" == "1" ]] && notice "DRY RUN: no changes will be made."
-    log_info "domain=${DOMAIN} tls=${TLS_MODE} ref=${UPSTREAM_REF} firewall=${CONFIGURE_FIREWALL}"
+    log_info "domain=${DOMAIN} tls=${TLS_MODE} ref=${UPSTREAM_REF} firewall=${CONFIGURE_FIREWALL} skip_ssh_hardening=${SKIP_SSH_HARDENING}"
 
-    set_step_total 10
+    set_step_total 11
     step "Preflight checks";                 preflight
     step "Install system packages";          step_packages
     step "Create service account & layout";  step_account
@@ -216,8 +219,9 @@ main() {
     step "Configure the application";        step_app
     step "Install the systemd service";      step_service
     step "Configure nginx and TLS";          step_nginx
-    # Verify while the network is fully open, then harden with the firewall last.
+    # Verify while the network is fully open, then harden sshd and, last, the firewall.
     step "Verify the deployment";            step_verify
+    step "Restrict sshd MACs";               step_ssh
     step "Configure the firewall";           step_firewall
     print_summary
     log_info "==== installer finished successfully ===="

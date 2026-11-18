@@ -61,7 +61,7 @@ automatically.
 sudo ./setup.sh --domain files.example.org --email you@example.org
 ```
 
-This will, as ten idempotent steps:
+This will, as eleven idempotent steps:
 
 1. **Preflight** — verify OS/arch/systemd/disk, that ports 80/443 are free, and
    that the domain resolves to this host.
@@ -78,9 +78,12 @@ This will, as ten idempotent steps:
    identity key (`0600`), and write `config.py`.
 7. **Service** — install and start a hardened `systemd` unit running uWSGI.
 8. **nginx + TLS** — reverse-proxy the socket and obtain a certificate.
-9. **Firewall** — optional (`--firewall`); always allows SSH before enabling UFW.
-10. **Verify** — probe the app over its socket and do an upload/download
-    round-trip, then print the client configuration values.
+9. **Verify** — probe the app over its socket and do an upload/download
+   round-trip, then print the client configuration values.
+10. **sshd MACs** — restrict sshd to encrypt-then-MAC SHA-2 / UMAC-128 MACs (no
+    `hmac-sha1`, no 64-bit-tag `umac-64`) via a drop-in checked with `sshd -t`;
+    opt out with `--skip-ssh-hardening`.
+11. **Firewall** — optional (`--firewall`); always allows SSH before enabling UFW.
 
 ### Point the client at it
 
@@ -110,6 +113,7 @@ public key, so both values must match the deployed server.
 | `--max-file-size <bytes>` | Upload limit (default `10000000`, matching the client). |
 | `--processes <n>` | uWSGI worker processes (default `4`). |
 | `--firewall` | Configure UFW (allows the detected SSH port first). |
+| `--skip-ssh-hardening` | Keep sshd's stock MACs (still offering `hmac-sha1` and `umac-64`). |
 | `--upgrade-system` | Run `apt upgrade` during install (off by default). |
 | `--dry-run` | Print every change without making any. |
 | `-y, --yes` | Assume "yes" for prompts (unattended). |

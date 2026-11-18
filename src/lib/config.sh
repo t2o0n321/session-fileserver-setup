@@ -74,6 +74,16 @@ readonly SELF_SIGNED_KEY="/etc/ssl/private/${NGINX_SITE_NAME}-selfsigned.key"
 readonly NGINX_MAX_BODY_SIZE="16m"
 
 # --------------------------------------------------------------------------
+# sshd
+# --------------------------------------------------------------------------
+# Encrypt-then-MAC with SHA-2 or 128-bit UMAC only: drops the hmac-sha1 and
+# 64-bit-tag umac-64 MACs that stock OpenSSH still offers.
+readonly SSHD_MACS="hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,umac-128-etm@openssh.com"
+# sshd keeps the first value it reads and Ubuntu's sshd_config includes
+# sshd_config.d/*.conf at the top, so a low number puts this ahead of most files.
+readonly SSHD_DROPIN="/etc/ssh/sshd_config.d/10-session-file-server.conf"
+
+# --------------------------------------------------------------------------
 # APT: the Oxen repository supplies python3-session-util
 # --------------------------------------------------------------------------
 readonly OXEN_KEY_URL="https://deb.oxen.io/pub.gpg"

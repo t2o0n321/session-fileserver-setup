@@ -17,7 +17,7 @@ docker build -q -t "${IMG}" - >/dev/null <<EOF
 FROM ubuntu:${TAG}
 ENV DEBIAN_FRONTEND=noninteractive container=docker
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      systemd systemd-sysv dbus sudo curl ca-certificates gnupg git iproute2 \
+      systemd systemd-sysv dbus sudo curl ca-certificates gnupg git iproute2 openssh-server \
  && rm -rf /var/lib/apt/lists/*
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
@@ -36,8 +36,12 @@ run() { docker exec "${NAME}" bash -c "cd /installer && $*"; }
 
 echo "== install =="
 run "./setup.sh --domain files.test.local --tls self-signed --skip-dns-check --yes"
+run "source src/lib/config.sh && sshd -T | grep -qx \"macs \${SSHD_MACS}\""
+echo "  ok  sshd negotiates only the configured MACs"
 echo "== re-run (idempotency) =="
 run "./setup.sh --domain files.test.local --tls self-signed --skip-dns-check --yes"
 echo "== uninstall --purge =="
 run "./setup.sh --uninstall --purge --yes"
+run "source src/lib/config.sh && test ! -e \"\${SSHD_DROPIN}\""
+echo "  ok  sshd drop-in removed"
 echo "ALL PASS"
